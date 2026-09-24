@@ -1,0 +1,9 @@
+{
+  "download_dir": "D:\\Projects\\Gofile Fetch\\downloads",
+  "account_token": "",
+  "max_concurrent_tasks": 3,
+  "chunk_threads": 8,
+  "proxy": "http://127.0.0.1:27890",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  "language": "en-US"
+}
