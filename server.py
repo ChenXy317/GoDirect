@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
     broadcast_task = asyncio.create_task(broadcast_task_metrics())
     yield
     broadcast_task.cancel()
+    manager.shutdown()
 
 
 app = FastAPI(title="GoDirect - 简易下载管理器", lifespan=lifespan)
@@ -205,10 +206,12 @@ def get_settings():
 
 @app.post("/api/settings")
 def save_settings(req: SettingsUpdateRequest):
-    """保存更新的应用配置项并刷新服务会话"""
-    updates = req.dict(exclude_unset=True)
+    """保存更新的应用配置项并刷新服务会话与下载器参数"""
+    updates = req.model_dump(exclude_unset=True)
     updated = update_config(updates)
     api_client._init_session()
+    if "max_concurrent_tasks" in updates:
+        manager.update_settings(max_concurrent_tasks=updates["max_concurrent_tasks"])
     return {"status": "ok", "config": updated}
 
 
@@ -221,7 +224,7 @@ def export_curl_script(req: StartDownloadRequest):
     bat_path = base_dir / "download_gofile.bat"
 
     token = req.token or api_client.ensure_account()
-    items_dict = [item.dict() for item in req.items]
+    items_dict = [item.model_dump() for item in req.items]
     IDMInterop.generate_curl_script(items_dict, token, str(bat_path))
     return {"status": "ok", "bat_path": str(bat_path)}
 
@@ -231,7 +234,7 @@ def push_to_idm(req: StartDownloadRequest):
     """推送任务列表至本地 IDM 队列"""
     cfg = load_config()
     download_dir = cfg.get("download_dir", "./downloads")
-    items_dict = [item.dict() for item in req.items]
+    items_dict = [item.model_dump() for item in req.items]
     token = req.token or api_client.ensure_account()
     success = IDMInterop.send_to_idm(items_dict, download_dir, token=token)
     if not success:

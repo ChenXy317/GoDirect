@@ -2,15 +2,15 @@ import asyncio
 import json
 import logging
 import math
-import os
 import re
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import requests
 
@@ -20,9 +20,21 @@ logger = logging.getLogger("downloader")
 
 
 def sanitize_filename(name: str) -> str:
-    """清理文件名中的非法字符以适配本地文件系统"""
+    """清理文件名中的非法字符与 Windows 系统保留文件名以适配本地文件系统"""
     cleaned = re.sub(r'[\\/*?:"<>|]', "_", name).strip()
-    return cleaned if cleaned else "unnamed_file"
+    cleaned = cleaned.rstrip(". ")
+    if not cleaned:
+        return "unnamed_file"
+
+    stem = Path(cleaned).stem.upper()
+    reserved_names = {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    }
+    if stem in reserved_names:
+        cleaned = f"_{cleaned}"
+    return cleaned
 
 
 class TaskStatus(str, Enum):
@@ -67,6 +79,8 @@ class DownloadTask:
         self._last_tick_time = time.time()
         self._last_tick_bytes = 0
         self._lock = threading.Lock()
+        self._is_active = False
+        self._active_lock = threading.Lock()
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为前端适用的字典数据"""
@@ -122,8 +136,20 @@ class DownloadManager:
         self._loop: asyncio.AbstractEventLoop | None = None
 
         cfg = load_config()
-        max_concurrent = max(1, int(cfg.get("max_concurrent_tasks", 3)))
-        self._semaphore = threading.Semaphore(max_concurrent)
+        self._max_concurrent = max(1, int(cfg.get("max_concurrent_tasks", 3)))
+        self._semaphore = threading.Semaphore(self._max_concurrent)
+
+    def update_settings(self, max_concurrent_tasks: int | None = None) -> None:
+        """动态更新下载管理器的并发运行配置"""
+        if max_concurrent_tasks is not None:
+            new_max = max(1, int(max_concurrent_tasks))
+            self._max_concurrent = new_max
+            self._semaphore = threading.Semaphore(new_max)
+
+    def shutdown(self) -> None:
+        """关闭线程池释放系统资源"""
+        self.task_executor.shutdown(wait=False)
+        self.chunk_executor.shutdown(wait=False)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """设置异步事件循环以支持状态回调"""
@@ -184,13 +210,20 @@ class DownloadManager:
         return False
 
     def resume_task(self, task_id: str) -> bool:
-        """恢复指定下载任务"""
+        """恢复指定下载任务，等待旧线程平稳退出后调度"""
         task = self.tasks.get(task_id)
         if task and task.status in (TaskStatus.PAUSED, TaskStatus.ERROR):
             task._stop_requested = False
             task.status = TaskStatus.PENDING
             task.error_message = ""
-            self._schedule_worker(task)
+
+            def _wait_and_schedule():
+                while task._is_active:
+                    time.sleep(0.1)
+                if not task._stop_requested and task.status == TaskStatus.PENDING:
+                    self._schedule_worker(task)
+
+            threading.Thread(target=_wait_and_schedule, daemon=True).start()
             return True
         return False
 
@@ -206,7 +239,7 @@ class DownloadManager:
                 if f.exists():
                     try:
                         f.unlink()
-                    except Exception:
+                    except OSError:
                         pass
             del self.tasks[task_id]
             return True
@@ -222,22 +255,31 @@ class DownloadManager:
 
     def _download_worker(self, task: DownloadTask) -> None:
         """下载工作线程主调度逻辑"""
-        while not self._semaphore.acquire(timeout=0.2):
-            if task._stop_requested or task.status == TaskStatus.CANCELED:
+        with task._active_lock:
+            if task._is_active:
                 return
-
-        cfg = load_config()
-        proxy = cfg.get("proxy", "").strip()
-        proxies = {"http": proxy, "https": proxy} if proxy else None
-        user_agent = cfg.get("user_agent", "")
-        chunk_threads_cfg = max(1, min(int(cfg.get("chunk_threads", 4)), 16))
+            task._is_active = True
 
         save_path = Path(task.save_path)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = Path(str(save_path) + ".part")
         meta_path = Path(str(save_path) + ".part.meta")
+        acquired_semaphore = False
 
         try:
+            while not self._semaphore.acquire(timeout=0.2):
+                if task._stop_requested or task.status == TaskStatus.CANCELED:
+                    return
+
+            acquired_semaphore = True
+
+            cfg = load_config()
+            proxy = cfg.get("proxy", "").strip()
+            proxies = {"http": proxy, "https": proxy} if proxy else None
+            user_agent = cfg.get("user_agent", "")
+            chunk_threads_cfg = max(1, min(int(cfg.get("chunk_threads", 4)), 16))
+
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+
             if task._stop_requested or task.status == TaskStatus.CANCELED:
                 return
 
@@ -326,13 +368,28 @@ class DownloadManager:
 
             if temp_path.exists():
                 if save_path.exists():
-                    save_path.unlink()
-                temp_path.rename(save_path)
+                    try:
+                        save_path.unlink()
+                    except OSError:
+                        pass
+
+                renamed = False
+                for _ in range(5):
+                    try:
+                        temp_path.rename(save_path)
+                        renamed = True
+                        break
+                    except (PermissionError, FileExistsError):
+                        time.sleep(0.3)
+
+                if not renamed and temp_path.exists():
+                    import shutil
+                    shutil.move(str(temp_path), str(save_path))
 
             if meta_path.exists():
                 try:
                     meta_path.unlink()
-                except Exception:
+                except OSError:
                     pass
 
             task.status = TaskStatus.COMPLETED
@@ -347,13 +404,16 @@ class DownloadManager:
                 task.error_message = str(e)
                 task.speed = 0
         finally:
-            self._semaphore.release()
+            if acquired_semaphore:
+                self._semaphore.release()
+            with task._active_lock:
+                task._is_active = False
             if task.status == TaskStatus.CANCELED:
                 for f in (temp_path, meta_path):
                     if f.exists():
                         try:
                             f.unlink()
-                        except Exception:
+                        except OSError:
                             pass
 
     def _run_chunked_download(
@@ -367,20 +427,28 @@ class DownloadManager:
         proxies: dict[str, str] | None,
     ) -> None:
         """执行多线程分块并发下载"""
-        chunks: list[dict[str, int]] = []
-        chunk_size = math.ceil(total_size / threads)
-
-        # 读取断点续传元数据
+        # 读取断点续传元数据，优先继承已有分块结构
         if temp_path.exists() and meta_path.exists():
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     loaded_chunks = json.load(f)
-                if isinstance(loaded_chunks, list) and len(loaded_chunks) == threads:
+                if (
+                    isinstance(loaded_chunks, list)
+                    and len(loaded_chunks) > 0
+                    and all(
+                        isinstance(c, dict)
+                        and "start" in c
+                        and "end" in c
+                        and "downloaded" in c
+                        for c in loaded_chunks
+                    )
+                ):
                     chunks = loaded_chunks
-            except Exception:
+            except (OSError, json.JSONDecodeError):
                 chunks = []
 
         if not chunks:
+            chunk_size = math.ceil(total_size / threads)
             for i in range(threads):
                 s = i * chunk_size
                 e = min((i + 1) * chunk_size - 1, total_size - 1)
@@ -391,6 +459,10 @@ class DownloadManager:
                 if total_size > 0:
                     f.truncate(total_size)
             self._save_meta(meta_path, chunks)
+        elif not temp_path.exists():
+            with open(temp_path, "wb") as f:
+                if total_size > 0:
+                    f.truncate(total_size)
 
         task.downloaded_size = sum(c["downloaded"] for c in chunks)
         task.status = TaskStatus.DOWNLOADING
@@ -423,8 +495,8 @@ class DownloadManager:
                         timeout=30,
                         stream=True,
                     ) as resp:
-                        if resp.status_code not in (200, 206):
-                            raise RuntimeError(f"HTTP {resp.status_code}")
+                        if resp.status_code != 206:
+                            raise RuntimeError(f"服务端响应状态为 HTTP {resp.status_code}，期望分块数据 HTTP 206")
 
                         with open(temp_path, "r+b") as f:
                             f.seek(current_start)
@@ -436,9 +508,8 @@ class DownloadManager:
                                     f.write(block)
                                     block_len = len(block)
                                     current_start += block_len
-                                    c["downloaded"] += block_len
-
                                     with task._lock:
+                                        c["downloaded"] += block_len
                                         task.downloaded_size += block_len
                                         task.update_metrics()
 
@@ -453,7 +524,7 @@ class DownloadManager:
                         return
 
         # 启动分块并发
-        futures = [self.chunk_executor.submit(worker, i) for i in range(threads)]
+        futures = [self.chunk_executor.submit(worker, i) for i in range(len(chunks))]
 
         while not all(f.done() for f in futures):
             if task._stop_requested or task.status == TaskStatus.CANCELED:
@@ -462,11 +533,13 @@ class DownloadManager:
             with meta_lock:
                 self._save_meta(meta_path, chunks)
 
-        for f in futures:
-            try:
-                f.result()
-            except Exception as e:
-                active_error.append(str(e))
+        # 任务被请求停止时跳过阻塞等待，否则收集各分块执行结果
+        if not (task._stop_requested or task.status == TaskStatus.CANCELED):
+            for f in futures:
+                try:
+                    f.result()
+                except Exception as e:
+                    active_error.append(str(e))
 
         with meta_lock:
             self._save_meta(meta_path, chunks)
@@ -533,5 +606,5 @@ class DownloadManager:
                 json.dump(chunks, f)
             if tmp.exists():
                 tmp.replace(meta_path)
-        except Exception:
+        except OSError:
             pass

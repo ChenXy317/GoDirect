@@ -128,10 +128,17 @@ class IDMInterop:
                 continue
 
             save_folder = target_dir
-            if rel_path and "/" in rel_path.replace("\\", "/"):
-                sub_dir = Path(rel_path).parent
-                save_folder = (target_dir / sub_dir).resolve()
-                save_folder.mkdir(parents=True, exist_ok=True)
+            if rel_path:
+                rel_parts = [p for p in Path(rel_path).parts if p not in ("..", ".", "/", "\\")]
+                if len(rel_parts) > 1:
+                    sub_dir = Path(*rel_parts[:-1])
+                    candidate_folder = (target_dir / sub_dir).resolve()
+                    try:
+                        candidate_folder.relative_to(target_dir)
+                        save_folder = candidate_folder
+                    except ValueError:
+                        save_folder = target_dir
+                    save_folder.mkdir(parents=True, exist_ok=True)
 
             payload.append({
                 "url": url,
@@ -142,16 +149,18 @@ class IDMInterop:
         if not payload:
             return False
 
+        b64_payload = base64.b64encode(json.dumps(payload, ensure_ascii=False).encode("utf-8")).decode("ascii")
+
         ps_script = f"""
 $code = @'
 {IDM_CS_CODE}
 '@
+$jsonBytes = [System.Convert]::FromBase64String('{b64_payload}')
+$jsonText = [System.Text.Encoding]::UTF8.GetString($jsonBytes)
+$items = $jsonText | ConvertFrom-Json
+
 try {{
     Add-Type -TypeDefinition $code -ErrorAction Stop
-    $items = @'
-{json.dumps(payload, ensure_ascii=False)}
-'@ | ConvertFrom-Json
-
     $allSuccess = $true
     foreach ($item in $items) {{
         $ok = [IDMLib.IDMHelper]::Send($item.url, "{referer}", "{cookies}", $item.folder, $item.name, {flags})
@@ -184,7 +193,7 @@ Write-Output "OK"
     ) -> str:
         """生成带完整鉴权 Cookie 和 Referer 的 Windows 批处理下载脚本"""
         cfg = load_config()
-        ua = cfg.get("user_agent", "")
+        ua = cfg.get("user_agent", "").replace("%", "%%")
         proxy = cfg.get("proxy", "").strip()
 
         lines = [
@@ -196,7 +205,7 @@ Write-Output "OK"
         ]
 
         if proxy:
-            lines.append(f"set PROXY={proxy}")
+            lines.append(f"set PROXY={proxy.replace('%', '%%')}")
             proxy_flag = '-x "%PROXY%" '
         else:
             proxy_flag = ""
@@ -211,9 +220,10 @@ Write-Output "OK"
                 continue
 
             escaped_url = url.replace("%", "%%")
-            clean_rel_path = rel_path.replace("\\", "/")
+            escaped_name = name.replace("%", "%%").replace('"', "")
+            clean_rel_path = rel_path.replace("\\", "/").replace("%", "%%").replace('"', "")
 
-            lines.append(f'echo 开始下载: {name}')
+            lines.append(f'echo 开始下载: {escaped_name}')
             lines.append(
                 f'curl.exe -L -C - --create-dirs {proxy_flag}-o "{clean_rel_path}" "{escaped_url}" '
                 f'-H "Cookie: accountToken=%TOKEN%" '

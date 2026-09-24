@@ -221,8 +221,13 @@ class GofileAPI:
 
         data = root_info.get("data", {})
         items: list[dict[str, Any]] = []
+        visited_folder_ids: set[str] = set()
 
-        def walk(node: dict[str, Any], current_path: str = ""):
+        def walk(node: dict[str, Any], current_path: str = "", depth: int = 0):
+            if depth > 20:
+                return
+
+            node_id = str(node.get("id", ""))
             node_type = node.get("type")
             node_name = node.get("name", "unnamed")
             safe_rel_dir = current_path.replace("\\", "/").strip("/")
@@ -239,12 +244,17 @@ class GofileAPI:
                     "relative_path": rel_path,
                 })
             elif node_type == "folder":
+                if node_id:
+                    if node_id in visited_folder_ids:
+                        return
+                    visited_folder_ids.add(node_id)
+
                 folder_path = f"{safe_rel_dir}/{node_name}" if safe_rel_dir else node_name
                 children = node.get("children")
 
-                if children is None and node.get("id") and node.get("id") != data.get("id"):
+                if children is None and node_id and node_id != str(data.get("id", "")):
                     try:
-                        sub_info = self.get_content_info(node["id"], password)
+                        sub_info = self.get_content_info(node_id, password)
                         sub_data = sub_info.get("data", {})
                         children = sub_data.get("children", {})
                     except Exception as e:
@@ -254,7 +264,7 @@ class GofileAPI:
                 if children:
                     children_list = children.values() if isinstance(children, dict) else children
                     for child in children_list:
-                        walk(child, folder_path)
+                        walk(child, folder_path, depth + 1)
 
-        walk(data, "")
+        walk(data, "", 0)
         return items

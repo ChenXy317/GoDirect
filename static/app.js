@@ -558,6 +558,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".file-chk").forEach((c) => (c.checked = e.target.checked));
   });
 
+  document.getElementById("fileListBody").addEventListener("change", (e) => {
+    if (e.target && e.target.classList.contains("file-chk")) {
+      const chks = document.querySelectorAll(".file-chk");
+      const allChecked = chks.length > 0 && Array.from(chks).every((c) => c.checked);
+      document.getElementById("chkHeaderSelectAll").checked = allChecked;
+    }
+  });
+
   document.getElementById("btnDownloadSelected").addEventListener("click", handleDownloadSelected);
   document.getElementById("btnExportCurl").addEventListener("click", handleExportCurl);
   document.getElementById("btnPushIdm").addEventListener("click", handlePushIdm);
