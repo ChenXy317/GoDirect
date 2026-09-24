@@ -89,7 +89,7 @@ function initWebSocket() {
 function updateGlobalSpeed() {
   let totalSpeed = 0;
   for (const t of tasksCache) {
-    if (t.status === "downloading") {
+    if (t.status === "downloading" || t.status === "connecting") {
       totalSpeed += t.speed || 0;
     }
   }
@@ -201,8 +201,17 @@ window.startSingleDownload = async function (index) {
         token: currentToken,
       }),
     });
+    const data = await res.json();
     if (res.ok) {
       showToast(`任务已提交: ${file.name}`);
+      if (data.tasks) {
+        data.tasks.forEach((t) => {
+          const idx = tasksCache.findIndex((x) => x.task_id === t.task_id);
+          if (idx >= 0) tasksCache[idx] = t;
+          else tasksCache.unshift(t);
+        });
+        renderTasks();
+      }
     }
   } catch (err) {
     showToast("添加下载任务失败", "error");
@@ -239,8 +248,17 @@ async function handleDownloadSelected() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: selectedItems, token: currentToken }),
     });
+    const data = await res.json();
     if (res.ok) {
       showToast(`已批量添加 ${selectedItems.length} 个下载任务`);
+      if (data.tasks) {
+        data.tasks.forEach((t) => {
+          const idx = tasksCache.findIndex((x) => x.task_id === t.task_id);
+          if (idx >= 0) tasksCache[idx] = t;
+          else tasksCache.unshift(t);
+        });
+        renderTasks();
+      }
     }
   } catch (e) {
     showToast("提交批量任务失败", "error");
@@ -307,13 +325,15 @@ async function handlePushIdm() {
   }
 }
 
-// 任务列表渲染
+// 任务列表平滑渲染
 function renderTasks() {
   const container = document.getElementById("tasksList");
   const empty = document.getElementById("emptyTasks");
 
   const allCount = tasksCache.length;
-  const downloadingCount = tasksCache.filter((t) => t.status === "downloading").length;
+  const downloadingCount = tasksCache.filter(
+    (t) => t.status === "downloading" || t.status === "connecting"
+  ).length;
   const completedCount = tasksCache.filter((t) => t.status === "completed").length;
 
   document.getElementById("countAll").innerText = allCount;
@@ -321,7 +341,8 @@ function renderTasks() {
   document.getElementById("countCompleted").innerText = completedCount;
 
   const filtered = tasksCache.filter((t) => {
-    if (currentTab === "downloading") return t.status === "downloading" || t.status === "pending";
+    if (currentTab === "downloading")
+      return t.status === "downloading" || t.status === "connecting" || t.status === "pending";
     if (currentTab === "completed") return t.status === "completed";
     return true;
   });
@@ -333,17 +354,28 @@ function renderTasks() {
     return;
   }
 
-  empty.style.display = "none";
-  container.innerHTML = "";
+  if (empty.parentNode === container) {
+    empty.remove();
+  }
+
+  const existingItems = new Map();
+  container.querySelectorAll(".task-item").forEach((el) => {
+    existingItems.set(el.dataset.taskId, el);
+  });
+
+  const activeIds = new Set();
 
   filtered.forEach((task) => {
-    const item = document.createElement("div");
-    item.className = "task-item";
+    activeIds.add(task.task_id);
+    let item = existingItems.get(task.task_id);
 
     let statusText = "等待中";
     let statusClass = "status-paused";
-    if (task.status === "downloading") {
-      statusText = "下载中";
+    if (task.status === "connecting") {
+      statusText = "连接握手中";
+      statusClass = "status-downloading";
+    } else if (task.status === "downloading") {
+      statusText = "高速下载中";
       statusClass = "status-downloading";
     } else if (task.status === "completed") {
       statusText = "已完成";
@@ -356,37 +388,75 @@ function renderTasks() {
       statusClass = "status-error";
     }
 
-    item.innerHTML = `
-      <div class="task-top">
-        <div class="task-title">
-          <span>${escapeHtml(task.name)}</span>
-        </div>
-        <span class="task-status-tag ${statusClass}">${statusText}</span>
-      </div>
+    const relText =
+      task.relative_path && task.relative_path !== task.name
+        ? ` <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: normal;">(${escapeHtml(task.relative_path)})</span>`
+        : "";
 
-      <div class="progress-track">
-        <div class="progress-bar" style="width: ${task.percent}%"></div>
-      </div>
-
-      <div class="task-bottom">
-        <div class="task-metrics">
-          <span>进度: ${task.percent}% (${formatBytes(task.downloaded_size)} / ${formatBytes(task.total_size)})</span>
-          ${task.status === "downloading" ? `<span>速度: ${formatSpeed(task.speed)}</span>` : ""}
-          ${task.status === "downloading" && task.eta > 0 ? `<span>剩余时间: ${formatETA(task.eta)}</span>` : ""}
-          ${task.error_message ? `<span style="color: var(--accent-red);">${escapeHtml(task.error_message)}</span>` : ""}
-        </div>
-
-        <div class="task-controls">
-          ${task.status === "downloading"
-            ? `<button class="btn btn-secondary btn-sm" onclick="pauseTask('${task.task_id}')">暂停</button>`
-            : task.status === "paused" || task.status === "error"
-            ? `<button class="btn btn-primary btn-sm" onclick="resumeTask('${task.task_id}')">继续</button>`
-            : ""}
-          <button class="btn btn-secondary btn-sm" onclick="cancelTask('${task.task_id}')">删除</button>
-        </div>
-      </div>
+    const controlsHtml = `
+      ${
+        task.status === "downloading" || task.status === "connecting"
+          ? `<button class="btn btn-secondary btn-sm" onclick="pauseTask('${task.task_id}')">暂停</button>`
+          : task.status === "paused" || task.status === "error"
+          ? `<button class="btn btn-primary btn-sm" onclick="resumeTask('${task.task_id}')">继续</button>`
+          : ""
+      }
+      <button class="btn btn-secondary btn-sm" onclick="cancelTask('${task.task_id}')">删除</button>
     `;
-    container.appendChild(item);
+
+    const metricsHtml = `
+      <span>进度: ${task.percent}% (${formatBytes(task.downloaded_size)} / ${formatBytes(task.total_size)})</span>
+      ${task.status === "downloading" ? `<span>速度: ${formatSpeed(task.speed)}</span>` : ""}
+      ${task.status === "downloading" && task.eta > 0 ? `<span>剩余时间: ${formatETA(task.eta)}</span>` : ""}
+      ${task.error_message ? `<span style="color: var(--accent-red);">${escapeHtml(task.error_message)}</span>` : ""}
+    `;
+
+    if (!item) {
+      item = document.createElement("div");
+      item.className = "task-item";
+      item.dataset.taskId = task.task_id;
+      item.innerHTML = `
+        <div class="task-top">
+          <div class="task-title">
+            <span>${escapeHtml(task.name)}</span>
+            ${relText}
+          </div>
+          <span class="task-status-tag ${statusClass}">${statusText}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar" style="width: ${task.percent}%"></div>
+        </div>
+        <div class="task-bottom">
+          <div class="task-metrics">${metricsHtml}</div>
+          <div class="task-controls">${controlsHtml}</div>
+        </div>
+      `;
+      container.appendChild(item);
+    } else {
+      const tag = item.querySelector(".task-status-tag");
+      if (tag) {
+        tag.className = `task-status-tag ${statusClass}`;
+        tag.innerText = statusText;
+      }
+      const bar = item.querySelector(".progress-bar");
+      if (bar) {
+        bar.style.width = `${task.percent}%`;
+      }
+      const metrics = item.querySelector(".task-metrics");
+      if (metrics) {
+        metrics.innerHTML = metricsHtml;
+      }
+      const controls = item.querySelector(".task-controls");
+      if (controls) {
+        controls.innerHTML = controlsHtml;
+      }
+    }
+  });
+
+  existingItems.forEach((el, id) => {
+    if (!activeIds.has(id)) {
+      el.remove();
+    }
   });
 }
 
@@ -413,6 +483,8 @@ window.cancelTask = async (taskId) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ task_id: taskId }),
   });
+  tasksCache = tasksCache.filter((t) => t.task_id !== taskId);
+  renderTasks();
 };
 
 // 设置面板逻辑
@@ -427,6 +499,10 @@ async function openSettings() {
       document.getElementById("settingProxy").value = data.config.proxy || "";
       document.getElementById("settingToken").value = data.config.account_token || "";
       document.getElementById("settingMaxTasks").value = data.config.max_concurrent_tasks || 3;
+      const chunkInput = document.getElementById("settingChunkThreads");
+      if (chunkInput) {
+        chunkInput.value = data.config.chunk_threads || 4;
+      }
     }
   } catch (e) {
     showToast("读取配置失败", "error");
@@ -438,12 +514,20 @@ async function saveSettings() {
   const proxy = document.getElementById("settingProxy").value.trim();
   const account_token = document.getElementById("settingToken").value.trim();
   const max_concurrent_tasks = parseInt(document.getElementById("settingMaxTasks").value) || 3;
+  const chunkInput = document.getElementById("settingChunkThreads");
+  const chunk_threads = chunkInput ? parseInt(chunkInput.value) || 4 : 4;
 
   try {
     const res = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ download_dir, proxy, account_token, max_concurrent_tasks }),
+      body: JSON.stringify({
+        download_dir,
+        proxy,
+        account_token,
+        max_concurrent_tasks,
+        chunk_threads,
+      }),
     });
     if (res.ok) {
       showToast("配置保存成功", "success");

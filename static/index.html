@@ -138,6 +138,11 @@
             <input type="number" id="settingMaxTasks" min="1" max="10" placeholder="默认 3" />
           </div>
           <div class="form-item">
+            <label>单文件分块并发线程数</label>
+            <input type="number" id="settingChunkThreads" min="1" max="16" placeholder="默认 4" />
+            <small>大文件多线程并发分块下载可显著提升跨国传输吞吐</small>
+          </div>
+          <div class="form-item">
             <label>自定义 Gofile 账户 Token (可选)</label>
             <input type="text" id="settingToken" placeholder="留空则自动生成并持久化访客 Token" />
             <small>如拥有 Premium/VIP 账户，可填入以解除流量限制</small>

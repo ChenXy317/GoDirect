@@ -232,7 +232,8 @@ def push_to_idm(req: StartDownloadRequest):
     cfg = load_config()
     download_dir = cfg.get("download_dir", "./downloads")
     items_dict = [item.dict() for item in req.items]
-    success = IDMInterop.send_to_idm(items_dict, download_dir)
+    token = req.token or api_client.ensure_account()
+    success = IDMInterop.send_to_idm(items_dict, download_dir, token=token)
     if not success:
-        raise HTTPException(status_code=404, detail="未在系统中检测到可用的 IDMan.exe 程序")
+        raise HTTPException(status_code=404, detail="未在系统中检测到可用的 IDMan.exe 程序或投递任务失败")
     return {"status": "ok", "pushed": len(items_dict)}
