@@ -167,9 +167,9 @@ function renderParsedFiles() {
     tr.innerHTML = `
       <td><input type="checkbox" class="file-chk" data-index="${index}" checked /></td>
       <td><strong>${escapeHtml(file.name)}</strong></td>
-      <td style="color: var(--text-muted); font-size: 0.8rem;">${escapeHtml(file.relative_path || file.name)}</td>
-      <td>${formatBytes(file.size)}</td>
-      <td>
+      <td><span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">${escapeHtml(file.relative_path || file.name)}</span></td>
+      <td><span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary);">${formatBytes(file.size)}</span></td>
+      <td style="text-align: right;">
         <button class="btn btn-secondary btn-sm" id="btnDl_${index}" onclick="startSingleDownload(${index})">下载</button>
       </td>
     `;
@@ -372,10 +372,10 @@ function renderTasks() {
     let statusText = "等待中";
     let statusClass = "status-paused";
     if (task.status === "connecting") {
-      statusText = "连接握手中";
+      statusText = "连接中";
       statusClass = "status-downloading";
     } else if (task.status === "downloading") {
-      statusText = "高速下载中";
+      statusText = "下载中";
       statusClass = "status-downloading";
     } else if (task.status === "completed") {
       statusText = "已完成";
@@ -384,13 +384,13 @@ function renderTasks() {
       statusText = "已暂停";
       statusClass = "status-paused";
     } else if (task.status === "error") {
-      statusText = "下载出错";
+      statusText = "错误";
       statusClass = "status-error";
     }
 
     const relText =
       task.relative_path && task.relative_path !== task.name
-        ? ` <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: normal;">(${escapeHtml(task.relative_path)})</span>`
+        ? ` <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono); font-weight: normal;">(${escapeHtml(task.relative_path)})</span>`
         : "";
 
     const controlsHtml = `
@@ -405,10 +405,10 @@ function renderTasks() {
     `;
 
     const metricsHtml = `
-      <span>进度: ${task.percent}% (${formatBytes(task.downloaded_size)} / ${formatBytes(task.total_size)})</span>
-      ${task.status === "downloading" ? `<span>速度: ${formatSpeed(task.speed)}</span>` : ""}
-      ${task.status === "downloading" && task.eta > 0 ? `<span>剩余时间: ${formatETA(task.eta)}</span>` : ""}
-      ${task.error_message ? `<span style="color: var(--accent-red);">${escapeHtml(task.error_message)}</span>` : ""}
+      <span>进度 ${task.percent}% (${formatBytes(task.downloaded_size)} / ${formatBytes(task.total_size)})</span>
+      ${task.status === "downloading" ? `<span>速度 ${formatSpeed(task.speed)}</span>` : ""}
+      ${task.status === "downloading" && task.eta > 0 ? `<span>剩余 ${formatETA(task.eta)}</span>` : ""}
+      ${task.error_message ? `<span style="color: var(--danger);">${escapeHtml(task.error_message)}</span>` : ""}
     `;
 
     if (!item) {

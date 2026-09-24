@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -120,6 +120,12 @@ def get_index():
     if not index_file.exists():
         raise HTTPException(status_code=404, detail="前端页面尚未构建")
     return FileResponse(str(index_file))
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def get_favicon():
+    """返回空内容以静默处理浏览器的图标嗅探请求"""
+    return Response(status_code=204)
 
 
 @app.post("/api/parse")

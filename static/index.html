@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GoDirect - 简易下载管理器</title>
+  <title>GoDirect - 高速下载管理器</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5'><polyline points='7 13 12 18 17 13'/><polyline points='7 6 12 11 17 6'/></svg>">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -12,46 +13,66 @@
     <header class="navbar">
       <div class="brand">
         <div class="brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="7 13 12 18 17 13"></polyline>
+            <polyline points="7 6 12 11 17 6"></polyline>
           </svg>
         </div>
         <div class="brand-text">
-          <h1>GoDirect</h1>
-          <span class="tagline">智能鉴权 · 高速多线程 · 完整下载器</span>
+          <div class="brand-title-wrap">
+            <h1>GoDirect</h1>
+            <span class="brand-badge">DIRECT ENGINE</span>
+          </div>
+          <span class="tagline">智能鉴权 · 高速多线程 · 独立下载管理</span>
         </div>
       </div>
 
       <div class="nav-actions">
         <div class="speed-indicator" id="globalSpeedBadge">
           <span class="pulse-dot"></span>
-          <span id="globalSpeedText">0 KB/s</span>
+          <span id="globalSpeedText">0 B/s</span>
         </div>
         <button class="btn btn-secondary" id="btnOpenFolder" title="打开下载文件夹">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-          打开下载目录
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>下载目录</span>
         </button>
         <button class="btn btn-icon" id="btnOpenSettings" title="系统设置">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
         </button>
       </div>
     </header>
 
     <!-- 主功能区 -->
-    <main class="main-content">
-      <!-- 链接解析面板 -->
+    <main class="main-content" style="display: flex; flex-direction: column; gap: 20px;">
+      <!-- 资源解析面板 -->
       <section class="card parse-card">
-        <h2 class="card-title">解析 Gofile 资源</h2>
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          解析 Gofile 资源
+        </h2>
         <div class="input-group">
           <div class="input-wrapper">
-            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-            <input type="text" id="inputUrl" placeholder="粘贴 Gofile 分享链接 (例如: https://gofile.io/d/xxxxxx 或纯代码)" />
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+            <input type="text" id="inputUrl" placeholder="粘贴 Gofile 资源链接或提取码 (如: https://gofile.io/d/xxxxxx)" autocomplete="off" />
           </div>
           <div class="input-wrapper password-input" id="passwordWrapper">
-            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-            <input type="password" id="inputPassword" placeholder="提取密码 (无密码可留空)" />
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <input type="password" id="inputPassword" placeholder="提取密码 (无密码留空)" autocomplete="off" />
           </div>
           <button class="btn btn-primary" id="btnParse">
             <span class="btn-text">立即解析</span>
@@ -64,15 +85,40 @@
       <section class="card result-card" id="resultCard" style="display: none;">
         <div class="result-header">
           <div class="result-summary">
-            <h3>解析结果</h3>
+            <h3>解析清单</h3>
             <span class="badge" id="parsedCountBadge">0 个文件</span>
-            <span class="badge badge-subtle" id="parsedSizeBadge">0 MB</span>
+            <span class="badge badge-subtle" id="parsedSizeBadge">0 B</span>
           </div>
           <div class="result-actions">
-            <button class="btn btn-secondary btn-sm" id="btnSelectAll">全选 / 反选</button>
-            <button class="btn btn-outline btn-sm" id="btnPushIdm">推送到 IDM</button>
-            <button class="btn btn-outline btn-sm" id="btnExportCurl">导出 cURL 脚本</button>
-            <button class="btn btn-success btn-sm" id="btnDownloadSelected">一键下载选中</button>
+            <button class="btn btn-secondary btn-sm" id="btnSelectAll">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 11 12 14 22 4"></polyline>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+              </svg>
+              全选 / 反选
+            </button>
+            <button class="btn btn-outline btn-sm" id="btnPushIdm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+              推送到 IDM
+            </button>
+            <button class="btn btn-outline btn-sm" id="btnExportCurl">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+              导出 cURL 脚本
+            </button>
+            <button class="btn btn-primary btn-sm" id="btnDownloadSelected">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              一键下载选中
+            </button>
           </div>
         </div>
 
@@ -80,15 +126,15 @@
           <table class="file-table">
             <thead>
               <tr>
-                <th width="40"><input type="checkbox" id="chkHeaderSelectAll" checked /></th>
+                <th width="44"><input type="checkbox" id="chkHeaderSelectAll" checked /></th>
                 <th>文件名</th>
                 <th>相对路径</th>
                 <th width="120">文件大小</th>
-                <th width="120">操作</th>
+                <th width="100" style="text-align: right;">操作</th>
               </tr>
             </thead>
             <tbody id="fileListBody">
-              <!-- 动态渲染解析到的文件 -->
+              <!-- 动态渲染解析项 -->
             </tbody>
           </table>
         </div>
@@ -98,19 +144,23 @@
       <section class="card tasks-card">
         <div class="tasks-header">
           <div class="tasks-tabs">
-            <button class="tab-btn active" data-tab="all">全部任务 (<span id="countAll">0</span>)</button>
+            <button class="tab-btn active" data-tab="all">全部 (<span id="countAll">0</span>)</button>
             <button class="tab-btn" data-tab="downloading">进行中 (<span id="countDownloading">0</span>)</button>
             <button class="tab-btn" data-tab="completed">已完成 (<span id="countCompleted">0</span>)</button>
           </div>
           <div class="tasks-actions">
-            <span class="connection-status connected" id="wsStatus">实时推送已就绪</span>
+            <span class="connection-status connected" id="wsStatus">实时推送已连接</span>
           </div>
         </div>
 
         <div class="tasks-list" id="tasksList">
           <div class="empty-state" id="emptyTasks">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <p>暂无下载任务，解析链接后点击“一键下载选中”即可高速下载</p>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <p>暂无活动下载任务</p>
           </div>
         </div>
       </section>
@@ -120,32 +170,32 @@
     <div class="modal-overlay" id="settingsModal" style="display: none;">
       <div class="modal-card">
         <div class="modal-header">
-          <h3>下载设置</h3>
+          <h3>偏好设置</h3>
           <button class="close-btn" id="btnCloseSettings">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-item">
-            <label>默认下载路径</label>
-            <input type="text" id="settingDownloadDir" placeholder="保存文件的绝对目录" />
+            <label>默认保存路径</label>
+            <input type="text" id="settingDownloadDir" placeholder="保存文件的绝对目录路径" />
           </div>
           <div class="form-item">
-            <label>网络代理地址 (Clash / 梯子端口)</label>
+            <label>网络代理端口 (HTTP/HTTPS)</label>
             <input type="text" id="settingProxy" placeholder="例如: http://127.0.0.1:27890 (留空为直连)" />
-            <small>国内网络建议配置代理以顺畅拉取 Gofile 资源</small>
+            <small>国内网络连接 Gofile 建议开启代理以规避阻断与握手超时</small>
           </div>
           <div class="form-item">
-            <label>最大并发下载任务数</label>
+            <label>最大并发任务数</label>
             <input type="number" id="settingMaxTasks" min="1" max="10" placeholder="默认 3" />
           </div>
           <div class="form-item">
             <label>单文件分块并发线程数</label>
             <input type="number" id="settingChunkThreads" min="1" max="16" placeholder="默认 4" />
-            <small>大文件多线程并发分块下载可显著提升跨国传输吞吐</small>
+            <small>大文件通过 HTTP Range 多线程分块拉取，可大幅提升传输速度</small>
           </div>
           <div class="form-item">
             <label>自定义 Gofile 账户 Token (可选)</label>
-            <input type="text" id="settingToken" placeholder="留空则自动生成并持久化访客 Token" />
-            <small>如拥有 Premium/VIP 账户，可填入以解除流量限制</small>
+            <input type="text" id="settingToken" placeholder="留空则自动注册并持久化访客 Token" />
+            <small>若填入 Gofile VIP/Premium 账户 Token 可解除单日速率与流量限制</small>
           </div>
         </div>
         <div class="modal-footer">
