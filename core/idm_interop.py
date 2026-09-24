@@ -1,7 +1,6 @@
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from .config import load_config
 
@@ -10,19 +9,22 @@ class IDMInterop:
     """IDM 外部下载器联动与任务导出助手"""
 
     @staticmethod
-    def find_idm_path() -> Optional[str]:
+    def find_idm_path() -> str | None:
         """寻找本机安装或运行中的 IDMan.exe 路径"""
-        # 1. 尝试从运行中进程获取
         try:
             cmd = "Get-Process -Name IDMan -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -First 1"
-            proc = subprocess.run(["powershell", "-Command", cmd], capture_output=True, text=True)
+            proc = subprocess.run(
+                ["powershell", "-Command", cmd],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             path = proc.stdout.strip()
             if path and os.path.exists(path):
                 return path
         except Exception:
             pass
 
-        # 2. 检查常见安装位置
         candidates = [
             r"C:\Program Files (x86)\Internet Download Manager\IDMan.exe",
             r"C:\Program Files\Internet Download Manager\IDMan.exe",
@@ -34,7 +36,41 @@ class IDMInterop:
         return None
 
     @classmethod
-    def generate_curl_script(cls, items: List[Dict[str, str]], token: str, output_path: str) -> str:
+    def send_to_idm(cls, items: list[dict[str, str]], download_dir: str) -> bool:
+        """将下载任务推送至本地运行的 IDM 队列"""
+        idm_exe = cls.find_idm_path()
+        if not idm_exe:
+            return False
+
+        target_dir = Path(download_dir).resolve()
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in items:
+            url = item.get("link", "")
+            name = item.get("name", "")
+            if not url:
+                continue
+
+            cmd = [
+                idm_exe,
+                "/d",
+                url,
+                "/p",
+                str(target_dir),
+                "/f",
+                name,
+                "/a",
+            ]
+            try:
+                subprocess.Popen(cmd)
+            except Exception:
+                pass
+        return True
+
+    @classmethod
+    def generate_curl_script(
+        cls, items: list[dict[str, str]], token: str, output_path: str
+    ) -> str:
         """生成带完整鉴权 Cookie 和 Referer 的 Windows 批处理下载脚本"""
         cfg = load_config()
         ua = cfg.get("user_agent", "")
@@ -65,7 +101,7 @@ class IDMInterop:
         lines.append("pause")
 
         content = "\r\n".join(lines)
-        with open(output_path, "w", encoding="gbk", errors="ignore") as f:
+        with open(output_path, "w", encoding="utf-8-sig") as f:
             f.write(content)
 
         return output_path

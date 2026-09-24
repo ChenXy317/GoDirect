@@ -1,5 +1,5 @@
 {
-  "download_dir": "D:\\Projects\\Gofile Fetch\\downloads",
+  "download_dir": "D:\\Projects\\GoDirect\\downloads",
   "account_token": "",
   "max_concurrent_tasks": 3,
   "chunk_threads": 8,

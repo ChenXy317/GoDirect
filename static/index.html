@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gofile Fetch - 简易下载管理器</title>
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="app-layout">
@@ -73,6 +70,7 @@
           </div>
           <div class="result-actions">
             <button class="btn btn-secondary btn-sm" id="btnSelectAll">全选 / 反选</button>
+            <button class="btn btn-outline btn-sm" id="btnPushIdm">推送到 IDM</button>
             <button class="btn btn-outline btn-sm" id="btnExportCurl">导出 cURL 脚本</button>
             <button class="btn btn-success btn-sm" id="btnDownloadSelected">一键下载选中</button>
           </div>
@@ -132,8 +130,12 @@
           </div>
           <div class="form-item">
             <label>网络代理地址 (Clash / 梯子端口)</label>
-            <input type="text" id="settingProxy" placeholder="例如: http://127.0.0.1:27890" />
+            <input type="text" id="settingProxy" placeholder="例如: http://127.0.0.1:27890 (留空为直连)" />
             <small>国内网络建议配置代理以顺畅拉取 Gofile 资源</small>
+          </div>
+          <div class="form-item">
+            <label>最大并发下载任务数</label>
+            <input type="number" id="settingMaxTasks" min="1" max="10" placeholder="默认 3" />
           </div>
           <div class="form-item">
             <label>自定义 Gofile 账户 Token (可选)</label>

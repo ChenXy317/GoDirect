@@ -1,10 +1,8 @@
 import asyncio
 import logging
 import os
-import subprocess
-import webbrowser
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,64 +18,12 @@ from core.idm_interop import IDMInterop
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("server")
 
-app = FastAPI(title="Gofile Fetch - 简易下载管理器")
-
-# 启用 CORS 跨域支持
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-# 挂载静态文件目录
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
 api_client = GofileAPI()
 manager = DownloadManager()
-
-# 活跃 WebSocket 连接集合
-active_websockets: List[WebSocket] = []
-
-
-class ParseRequest(BaseModel):
-    url: str
-    password: Optional[str] = None
-
-
-class DownloadItem(BaseModel):
-    name: str
-    link: str
-    total_size: int = 0
-    relative_path: Optional[str] = ""
-
-
-class StartDownloadRequest(BaseModel):
-    items: List[DownloadItem]
-    token: Optional[str] = None
-
-
-class TaskActionRequest(BaseModel):
-    task_id: str
-
-
-class SettingsUpdateRequest(BaseModel):
-    download_dir: Optional[str] = None
-    account_token: Optional[str] = None
-    proxy: Optional[str] = None
-    chunk_threads: Optional[int] = None
-    max_concurrent_tasks: Optional[int] = None
-
-
-@app.on_event("startup")
-async def startup_event():
-    """服务启动时初始化后台状态同步任务"""
-    manager.set_event_loop(asyncio.get_event_loop())
-    asyncio.create_task(broadcast_task_metrics())
+active_websockets: list[WebSocket] = []
 
 
 async def broadcast_task_metrics():
@@ -87,7 +33,6 @@ async def broadcast_task_metrics():
             if active_websockets:
                 tasks_data = manager.get_all_tasks()
                 msg = {"type": "metrics", "tasks": tasks_data}
-                # 并发推送给各个前端
                 for ws in list(active_websockets):
                     try:
                         await ws.send_json(msg)
@@ -99,17 +44,70 @@ async def broadcast_task_metrics():
         await asyncio.sleep(0.5)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理与后台任务调度"""
+    manager.set_event_loop(asyncio.get_event_loop())
+    broadcast_task = asyncio.create_task(broadcast_task_metrics())
+    yield
+    broadcast_task.cancel()
+
+
+app = FastAPI(title="Gofile Fetch - 简易下载管理器", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class ParseRequest(BaseModel):
+    url: str
+    password: str | None = None
+
+
+class DownloadItem(BaseModel):
+    name: str
+    link: str
+    total_size: int = 0
+    relative_path: str | None = ""
+
+
+class StartDownloadRequest(BaseModel):
+    items: list[DownloadItem]
+    token: str | None = None
+
+
+class TaskActionRequest(BaseModel):
+    task_id: str
+
+
+class SettingsUpdateRequest(BaseModel):
+    download_dir: str | None = None
+    account_token: str | None = None
+    proxy: str | None = None
+    chunk_threads: int | None = None
+    max_concurrent_tasks: int | None = None
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """前端实时状态同步 WebSocket 接口"""
     await websocket.accept()
     active_websockets.append(websocket)
     try:
-        # 初次连接时推送一次当前任务列表
         await websocket.send_json({"type": "metrics", "tasks": manager.get_all_tasks()})
         while True:
             await websocket.receive_text()
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    except Exception as e:
+        logger.warning("WebSocket 连接异常: %s", e)
+    finally:
         if websocket in active_websockets:
             active_websockets.remove(websocket)
 
@@ -194,7 +192,8 @@ def open_download_folder():
     cfg = load_config()
     d_dir = Path(cfg.get("download_dir", "./downloads")).resolve()
     d_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.Popen(["explorer.exe", str(d_dir)])
+    if hasattr(os, "startfile"):
+        os.startfile(str(d_dir))
     return {"status": "ok", "path": str(d_dir)}
 
 
@@ -206,10 +205,9 @@ def get_settings():
 
 @app.post("/api/settings")
 def save_settings(req: SettingsUpdateRequest):
-    """保存更新的应用配置项"""
+    """保存更新的应用配置项并刷新服务会话"""
     updates = req.dict(exclude_unset=True)
     updated = update_config(updates)
-    # 同步刷新 API 会话配置
     api_client._init_session()
     return {"status": "ok", "config": updated}
 
@@ -226,3 +224,15 @@ def export_curl_script(req: StartDownloadRequest):
     items_dict = [item.dict() for item in req.items]
     IDMInterop.generate_curl_script(items_dict, token, str(bat_path))
     return {"status": "ok", "bat_path": str(bat_path)}
+
+
+@app.post("/api/export/idm")
+def push_to_idm(req: StartDownloadRequest):
+    """推送任务列表至本地 IDM 队列"""
+    cfg = load_config()
+    download_dir = cfg.get("download_dir", "./downloads")
+    items_dict = [item.dict() for item in req.items]
+    success = IDMInterop.send_to_idm(items_dict, download_dir)
+    if not success:
+        raise HTTPException(status_code=404, detail="未在系统中检测到可用的 IDMan.exe 程序")
+    return {"status": "ok", "pushed": len(items_dict)}

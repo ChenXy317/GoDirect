@@ -1,12 +1,11 @@
 import hashlib
 import json
 import logging
-import os
 import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -26,13 +25,17 @@ class GofileAPI:
         self.config = load_config()
         self.session = requests.Session()
         self._init_session()
-        self._cached_salt: Optional[str] = "12af056dacea0b"
+        self._cached_salt: str | None = "12af056dacea0b"
 
     def _init_session(self) -> None:
         """初始化请求会话与代理配置"""
-        proxy = self.config.get("proxy")
+        self.config = load_config()
+        proxy = self.config.get("proxy", "").strip()
         if proxy:
             self.session.proxies = {"http": proxy, "https": proxy}
+        else:
+            self.session.proxies = {}
+
         self.session.headers.update({
             "User-Agent": self.config.get("user_agent", ""),
             "Referer": "https://gofile.io/",
@@ -45,7 +48,6 @@ class GofileAPI:
         if token:
             return token
 
-        # 若未配置 Token，则自动向 API 注册访客账户
         url = "https://api.gofile.io/accounts"
         try:
             res = self.session.post(url, timeout=10)
@@ -60,13 +62,23 @@ class GofileAPI:
             logger.error("请求创建访客账户时发生异常: %s", e)
             raise
 
-    def ensure_wt_script(self, max_age_seconds: int = 14400) -> Path:
+    def extract_salt_from_script(self, script_text: str) -> str | None:
+        """从 wt.obf.js 脚本中提取动态 Salt 值"""
+        try:
+            hex_strings = re.findall(r"'((?:\\x[0-9a-fA-F]{2})+)'", script_text)
+            for raw in hex_strings:
+                decoded = bytes.fromhex(raw.replace("\\x", "")).decode("utf-8", errors="ignore")
+                if len(decoded) == 14 and all(c in "0123456789abcdef" for c in decoded):
+                    return decoded
+        except Exception as e:
+            logger.warning("解析脚本 Salt 发生异常: %s", e)
+        return None
+
+    def ensure_wt_script(self, force: bool = False, max_age_seconds: int = 14400) -> Path:
         """确保本地缓存有最新的动态签名脚本 wt.obf.js"""
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        need_fetch = False
-        if not WT_JS_CACHE.exists():
-            need_fetch = True
-        else:
+        need_fetch = force or (not WT_JS_CACHE.exists())
+        if not need_fetch:
             file_age = time.time() - WT_JS_CACHE.stat().st_mtime
             if file_age > max_age_seconds:
                 need_fetch = True
@@ -78,11 +90,22 @@ class GofileAPI:
                     with open(WT_JS_CACHE, "w", encoding="utf-8") as f:
                         f.write(res.text)
                     logger.info("成功下载并更新本地 wt.obf.js 缓存")
+                    new_salt = self.extract_salt_from_script(res.text)
+                    if new_salt:
+                        self._cached_salt = new_salt
             except Exception as e:
                 logger.warning("下载最新 wt.obf.js 失败，尝试使用现有缓存: %s", e)
 
         if not WT_JS_CACHE.exists():
             raise FileNotFoundError("无法获取 wt.obf.js 脚本文件")
+
+        if not self._cached_salt:
+            try:
+                with open(WT_JS_CACHE, "r", encoding="utf-8") as f:
+                    self._cached_salt = self.extract_salt_from_script(f.read())
+            except Exception:
+                pass
+
         return WT_JS_CACHE
 
     def calculate_wt(self, token: str) -> str:
@@ -91,30 +114,41 @@ class GofileAPI:
         lang = self.config.get("language", "en-US")
         window = str(int(time.time() // 14400))
 
-        # 优先使用纯 Python 配合已知 Salt 计算以获得极致性能
+        if not self._cached_salt:
+            try:
+                self.ensure_wt_script()
+            except Exception as e:
+                logger.warning("初始化签名脚本失败: %s", e)
+
         if self._cached_salt:
             raw = f"{ua}::{lang}::{token}::{window}::{self._cached_salt}"
             return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-        # 备选：通过本地 Node.js 原生运行 wt.obf.js 计算
         js_path = self.ensure_wt_script()
         runner_js = f"""
+        if (typeof navigator === 'undefined') {{ globalThis.navigator = {{}}; }}
         Object.defineProperty(navigator, 'userAgent', {{ value: {json.dumps(ua)}, configurable: true }});
         Object.defineProperty(navigator, 'language', {{ value: {json.dumps(lang)}, configurable: true }});
         const fs = require('fs');
         eval(fs.readFileSync({json.dumps(str(js_path))}, 'utf8'));
         console.log(globalThis.generateWT({json.dumps(token)}));
         """
-        proc = subprocess.run(
-            ["node", "-e", runner_js],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        wt = proc.stdout.strip()
-        if wt:
-            return wt
-        raise RuntimeError(f"计算 X-Website-Token 失败: {proc.stderr}")
+        try:
+            proc = subprocess.run(
+                ["node", "-e", runner_js],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            wt = proc.stdout.strip()
+            if wt:
+                return wt
+        except Exception as e:
+            logger.error("Node.js 运行签名脚本失败: %s", e)
+
+        fallback_raw = f"{ua}::{lang}::{token}::{window}::12af056dacea0b"
+        return hashlib.sha256(fallback_raw.encode("utf-8")).hexdigest()
 
     @staticmethod
     def extract_content_id(input_str: str) -> str:
@@ -127,7 +161,9 @@ class GofileAPI:
                 return parts[1]
         return s
 
-    def get_content_info(self, content_id_or_url: str, password: Optional[str] = None) -> Dict[str, Any]:
+    def get_content_info(
+        self, content_id_or_url: str, password: str | None = None, retry_count: int = 0
+    ) -> dict[str, Any]:
         """获取指定文件或文件夹的详细信息与直接下载地址"""
         content_id = self.extract_content_id(content_id_or_url)
         token = self.ensure_account()
@@ -139,7 +175,7 @@ class GofileAPI:
             "X-BL": self.config.get("language", "en-US"),
         }
 
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "page": "1",
             "pageSize": "1000",
             "sortField": "name",
@@ -151,13 +187,21 @@ class GofileAPI:
 
         url = f"https://api.gofile.io/contents/{content_id}"
         res = self.session.get(url, params=params, headers=headers, timeout=15)
-        
+
         if res.status_code == 429:
             raise RuntimeError("请求过于频繁触发 API 速率限制 (429)，请稍等 1~2 分钟后再试")
 
-        data = res.json()
-        status = data.get("status")
+        if res.status_code in (401, 403) and retry_count == 0:
+            logger.info("检测到凭据或签名失效 (HTTP %s)，正在重刷新签名脚本重试...", res.status_code)
+            self.ensure_wt_script(force=True)
+            return self.get_content_info(content_id_or_url, password, retry_count=1)
 
+        try:
+            data = res.json()
+        except Exception:
+            raise RuntimeError(f"Gofile 接口响应异常 (HTTP {res.status_code})，可能受到网络阻断或服务端维护")
+
+        status = data.get("status")
         if status == "error-passwordRequired":
             return {"status": "password_required", "content_id": content_id, "message": "该内容受密码保护，请输入提取密码"}
         if status == "error-wrongPassword":
@@ -167,19 +211,24 @@ class GofileAPI:
 
         return {"status": "ok", "content_id": content_id, "data": data.get("data", {})}
 
-    def collect_all_download_items(self, content_id_or_url: str, password: Optional[str] = None) -> List[Dict[str, Any]]:
+    def collect_all_download_items(
+        self, content_id_or_url: str, password: str | None = None
+    ) -> list[dict[str, Any]]:
         """递归解析目录结构，输出扁平化的可下载文件清单"""
         root_info = self.get_content_info(content_id_or_url, password)
         if root_info.get("status") == "password_required":
             return [{"status": "password_required"}]
 
         data = root_info.get("data", {})
-        items: List[Dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
 
-        def walk(node: Dict[str, Any], current_path: str = ""):
+        def walk(node: dict[str, Any], current_path: str = ""):
             node_type = node.get("type")
             node_name = node.get("name", "unnamed")
+            safe_rel_dir = current_path.replace("\\", "/").strip("/")
+
             if node_type == "file":
+                rel_path = f"{safe_rel_dir}/{node_name}" if safe_rel_dir else node_name
                 items.append({
                     "id": node.get("id"),
                     "name": node_name,
@@ -187,15 +236,25 @@ class GofileAPI:
                     "link": node.get("link"),
                     "md5": node.get("md5"),
                     "mimetype": node.get("mimetype"),
-                    "relative_path": os.path.join(current_path, node_name),
+                    "relative_path": rel_path,
                 })
             elif node_type == "folder":
-                children = node.get("children", {})
-                folder_path = os.path.join(current_path, node_name) if current_path else ""
-                # children 在 API 返回中通常为字典（以 item_id 为 key）或列表
-                children_list = children.values() if isinstance(children, dict) else children
-                for child in children_list:
-                    walk(child, folder_path)
+                folder_path = f"{safe_rel_dir}/{node_name}" if safe_rel_dir else node_name
+                children = node.get("children")
+
+                if children is None and node.get("id") and node.get("id") != data.get("id"):
+                    try:
+                        sub_info = self.get_content_info(node["id"], password)
+                        sub_data = sub_info.get("data", {})
+                        children = sub_data.get("children", {})
+                    except Exception as e:
+                        logger.warning("解析子目录 %s 失败: %s", node_name, e)
+                        children = {}
+
+                if children:
+                    children_list = children.values() if isinstance(children, dict) else children
+                    for child in children_list:
+                        walk(child, folder_path)
 
         walk(data, "")
         return items

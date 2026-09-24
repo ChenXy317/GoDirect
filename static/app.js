@@ -4,6 +4,17 @@ let currentTab = "all";
 let tasksCache = [];
 let ws = null;
 
+// 工具函数：HTML 字符串转义以防御 XSS
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // 工具函数：格式化字节大小
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return "0 B";
@@ -155,11 +166,11 @@ function renderParsedFiles() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="checkbox" class="file-chk" data-index="${index}" checked /></td>
-      <td><strong>${file.name}</strong></td>
-      <td style="color: var(--text-muted); font-size: 0.8rem;">${file.relative_path || file.name}</td>
+      <td><strong>${escapeHtml(file.name)}</strong></td>
+      <td style="color: var(--text-muted); font-size: 0.8rem;">${escapeHtml(file.relative_path || file.name)}</td>
       <td>${formatBytes(file.size)}</td>
       <td>
-        <button class="btn btn-secondary btn-sm" onclick="startSingleDownload(${index})">下载</button>
+        <button class="btn btn-secondary btn-sm" id="btnDl_${index}" onclick="startSingleDownload(${index})">下载</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -172,6 +183,9 @@ function renderParsedFiles() {
 window.startSingleDownload = async function (index) {
   const file = parsedFiles[index];
   if (!file) return;
+
+  const btn = document.getElementById(`btnDl_${index}`);
+  if (btn) btn.disabled = true;
 
   try {
     const res = await fetch("/api/download/start", {
@@ -192,6 +206,8 @@ window.startSingleDownload = async function (index) {
     }
   } catch (err) {
     showToast("添加下载任务失败", "error");
+  } finally {
+    if (btn) btn.disabled = false;
   }
 };
 
@@ -260,12 +276,42 @@ async function handleExportCurl() {
   }
 }
 
+// 推送选中项至 IDM 下载队列
+async function handlePushIdm() {
+  const checkboxes = document.querySelectorAll(".file-chk:checked");
+  if (checkboxes.length === 0) {
+    showToast("请先勾选要推送至 IDM 的文件", "error");
+    return;
+  }
+
+  const items = [];
+  checkboxes.forEach((chk) => {
+    const f = parsedFiles[parseInt(chk.dataset.index)];
+    if (f) items.push(f);
+  });
+
+  try {
+    const res = await fetch("/api/export/idm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, token: currentToken }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`已成功将 ${data.pushed} 个任务推送至 IDM 下载队列`, "success");
+    } else {
+      showToast(data.detail || "推送至 IDM 失败", "error");
+    }
+  } catch (e) {
+    showToast("请求推送 IDM 失败", "error");
+  }
+}
+
 // 任务列表渲染
 function renderTasks() {
   const container = document.getElementById("tasksList");
   const empty = document.getElementById("emptyTasks");
 
-  // 更新各分类统计
   const allCount = tasksCache.length;
   const downloadingCount = tasksCache.filter((t) => t.status === "downloading").length;
   const completedCount = tasksCache.filter((t) => t.status === "completed").length;
@@ -313,7 +359,7 @@ function renderTasks() {
     item.innerHTML = `
       <div class="task-top">
         <div class="task-title">
-          <span>${task.name}</span>
+          <span>${escapeHtml(task.name)}</span>
         </div>
         <span class="task-status-tag ${statusClass}">${statusText}</span>
       </div>
@@ -327,7 +373,7 @@ function renderTasks() {
           <span>进度: ${task.percent}% (${formatBytes(task.downloaded_size)} / ${formatBytes(task.total_size)})</span>
           ${task.status === "downloading" ? `<span>速度: ${formatSpeed(task.speed)}</span>` : ""}
           ${task.status === "downloading" && task.eta > 0 ? `<span>剩余时间: ${formatETA(task.eta)}</span>` : ""}
-          ${task.error_message ? `<span style="color: var(--accent-red);">${task.error_message}</span>` : ""}
+          ${task.error_message ? `<span style="color: var(--accent-red);">${escapeHtml(task.error_message)}</span>` : ""}
         </div>
 
         <div class="task-controls">
@@ -380,6 +426,7 @@ async function openSettings() {
       document.getElementById("settingDownloadDir").value = data.config.download_dir || "";
       document.getElementById("settingProxy").value = data.config.proxy || "";
       document.getElementById("settingToken").value = data.config.account_token || "";
+      document.getElementById("settingMaxTasks").value = data.config.max_concurrent_tasks || 3;
     }
   } catch (e) {
     showToast("读取配置失败", "error");
@@ -390,12 +437,13 @@ async function saveSettings() {
   const download_dir = document.getElementById("settingDownloadDir").value.trim();
   const proxy = document.getElementById("settingProxy").value.trim();
   const account_token = document.getElementById("settingToken").value.trim();
+  const max_concurrent_tasks = parseInt(document.getElementById("settingMaxTasks").value) || 3;
 
   try {
     const res = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ download_dir, proxy, account_token }),
+      body: JSON.stringify({ download_dir, proxy, account_token, max_concurrent_tasks }),
     });
     if (res.ok) {
       showToast("配置保存成功", "success");
@@ -419,6 +467,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const chks = document.querySelectorAll(".file-chk");
     const anyUnchecked = Array.from(chks).some((c) => !c.checked);
     chks.forEach((c) => (c.checked = anyUnchecked));
+    document.getElementById("chkHeaderSelectAll").checked = anyUnchecked;
   });
 
   document.getElementById("chkHeaderSelectAll").addEventListener("change", (e) => {
@@ -427,6 +476,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btnDownloadSelected").addEventListener("click", handleDownloadSelected);
   document.getElementById("btnExportCurl").addEventListener("click", handleExportCurl);
+  document.getElementById("btnPushIdm").addEventListener("click", handlePushIdm);
 
   // 任务选项卡切换
   document.querySelectorAll(".tab-btn").forEach((btn) => {

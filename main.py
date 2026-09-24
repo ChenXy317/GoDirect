@@ -1,8 +1,8 @@
 import socket
-import sys
 import threading
 import time
 import webbrowser
+
 import uvicorn
 
 
@@ -22,9 +22,16 @@ def find_free_port(default_port: int = 8000) -> int:
         return port
 
 
-def open_browser_delayed(url: str, delay: float = 1.0) -> None:
-    """延时自动在默认浏览器中打开下载管理器界面"""
-    time.sleep(delay)
+def open_browser_delayed(url: str, port: int, max_wait: float = 3.0) -> None:
+    """等待服务端口监听就绪后在默认浏览器中打开下载管理器界面"""
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                break
+        except OSError:
+            time.sleep(0.2)
+    time.sleep(0.2)
     webbrowser.open(url)
 
 
@@ -38,8 +45,5 @@ if __name__ == "__main__":
     print(" 正在打开浏览器...")
     print("=" * 60)
 
-    # 启动后台线程唤起浏览器
-    threading.Thread(target=open_browser_delayed, args=(server_url,), daemon=True).start()
-
-    # 启动 FastAPI 服务
+    threading.Thread(target=open_browser_delayed, args=(server_url, port), daemon=True).start()
     uvicorn.run("server:app", host="127.0.0.1", port=port, log_level="info")
