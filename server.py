@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
     broadcast_task.cancel()
 
 
-app = FastAPI(title="Gofile Fetch - 简易下载管理器", lifespan=lifespan)
+app = FastAPI(title="GoDirect - 简易下载管理器", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

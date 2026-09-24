@@ -40,7 +40,7 @@ if __name__ == "__main__":
     server_url = f"http://127.0.0.1:{port}"
 
     print("=" * 60)
-    print(" Gofile Fetch - 简易下载管理器已就绪")
+    print(" GoDirect - 简易下载管理器已就绪")
     print(f" 服务访问地址: {server_url}")
     print(" 正在打开浏览器...")
     print("=" * 60)
